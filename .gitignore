@@ -1,0 +1,7 @@
+AGENTS.md
+CLAUDE.md
+
+.env
+bin/
+*.log
+.DS_Store
