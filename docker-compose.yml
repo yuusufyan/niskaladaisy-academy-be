@@ -1,0 +1,21 @@
+services:
+  niskaladaisy-academy-be:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: niskaladaisy-academy-be
+    ports:
+      - '8080:8080'
+    env_file:
+      - .env
+    environment:
+      # localhost inside the container is the container itself; reach Postgres/Redis on the Windows host.
+      DB_HOST: host.docker.internal
+      REDIS_HOST: host.docker.internal
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      docker-sso-net:
+
+networks:
+  docker-sso-net:
