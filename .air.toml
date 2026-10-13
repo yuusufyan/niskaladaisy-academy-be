@@ -3,8 +3,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/main ./cmd/api"
-  entrypoint = ["./tmp/main"]
+  cmd = "go build -o ./tmp/main.exe ./cmd/api"
+  entrypoint = ["./tmp/main.exe"]
   delay = 1000
   exclude_dir = ["tmp", "bin", "vendor", ".git"]
   exclude_regex = ["_test\\.go"]
