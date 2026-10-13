@@ -40,6 +40,17 @@ func Auth(jwtSecret string, access *service.AccessService) fiber.Handler {
 	}
 }
 
+// RequireSuperAdmin allows the request only when the authenticated user holds the superadmin role.
+func RequireSuperAdmin() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		a := GetAccess(c)
+		if a == nil || !a.IsSuperAdmin {
+			return apperror.Forbidden("you do not have permission to perform this action")
+		}
+		return c.Next()
+	}
+}
+
 // RequirePermission allows the request when the user holds any of perms.
 func RequirePermission(perms ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {

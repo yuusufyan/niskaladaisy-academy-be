@@ -1,0 +1,948 @@
+openapi: 3.0.3
+info:
+  title: Niskala Daisy Academy API
+  version: 1.0.0
+  description: |
+    User management API (auth, users, roles, permissions, menus).
+
+    **How to test:**
+    1. Call `POST /auth/login`, copy `data.tokens.access.token`.
+    2. Click **Authorize** and paste it into `BearerAuth` (without the `Bearer ` prefix).
+
+    The superadmin account is seeded from `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+
+servers:
+  - url: /api/v1
+
+tags:
+  - name: Health
+  - name: Auth
+  - name: Users
+  - name: Roles
+  - name: Permissions
+  - name: Menus
+
+paths:
+  /health:
+    servers:
+      - url: /
+    get:
+      tags: [Health]
+      summary: Database and Redis health check
+      security: []
+      responses:
+        '200':
+          description: Healthy
+        '503':
+          description: A dependency is down
+
+  /ping:
+    get:
+      tags: [Health]
+      summary: Ping (superadmin only)
+      description: Restricted to the `superadmin` role so only trusted operators can check liveness.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------- Auth
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginInput'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/LoginResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Exchange a refresh token for a new token pair
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshInput'
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/Tokens'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke a refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Current user with roles, permissions and menu tree
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/me/password:
+    put:
+      tags: [Auth]
+      summary: Change own password (revokes all sessions)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------- Users
+  /users:
+    get:
+      tags: [Users]
+      summary: List users
+      description: 'Permission: `user.read`'
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - name: is_active
+          in: query
+          schema:
+            type: boolean
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+                      meta:
+                        $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Users]
+      summary: Create a user
+      description: 'Permission: `user.create`'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Users]
+      summary: Get a user
+      description: 'Permission: `user.read`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/UserResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Users]
+      summary: Update a user
+      description: 'Permission: `user.update`. Omit `role_ids` to keep the current roles.'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Users]
+      summary: Delete a user
+      description: 'Permission: `user.delete`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /users/{id}/password:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    put:
+      tags: [Users]
+      summary: Reset a user's password
+      description: 'Permission: `user.update`'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResetPasswordInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Roles
+  /roles:
+    get:
+      tags: [Roles]
+      summary: List roles
+      description: 'Permission: `role.read`'
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Search'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Role'
+                      meta:
+                        $ref: '#/components/schemas/Meta'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Roles]
+      summary: Create a role
+      description: 'Permission: `role.create`'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/RoleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /roles/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Roles]
+      summary: Get a role with its permissions and menus
+      description: 'Permission: `role.read`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/RoleResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Roles]
+      summary: Update a role
+      description: 'Permission: `role.update`. The code is immutable; omit `permission_ids` / `menu_ids` to keep them.'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/RoleResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Roles]
+      summary: Delete a role
+      description: 'Permission: `role.delete`. System roles cannot be deleted.'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Permissions
+  /permissions:
+    get:
+      tags: [Permissions]
+      summary: List all permissions
+      description: 'Permission: `permission.read`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Permission'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ---------------------------------------------------------------- Menus
+  /menus:
+    get:
+      tags: [Menus]
+      summary: Full menu tree
+      description: 'Permission: `menu.read`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Menu'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Menus]
+      summary: Create a menu
+      description: 'Permission: `menu.create`'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/MenuResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /menus/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Menus]
+      summary: Get a menu
+      description: 'Permission: `menu.read`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/MenuResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Menus]
+      summary: Update a menu
+      description: 'Permission: `menu.update`'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MenuInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/MenuResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Menus]
+      summary: Delete a menu
+      description: 'Permission: `menu.delete`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from POST /auth/login (data.tokens.access.token)
+
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Search:
+      name: search
+      in: query
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+  responses:
+    Message:
+      description: Success without data
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Envelope'
+    UserResponse:
+      description: A user
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+    RoleResponse:
+      description: A role
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    $ref: '#/components/schemas/Role'
+    MenuResponse:
+      description: A menu
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    $ref: '#/components/schemas/Menu'
+    BadRequest:
+      description: Invalid body or validation failed (`data` maps field to message)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+          example:
+            code: 400
+            status: error
+            message: Validation failed
+            data:
+              email: email is required
+    Unauthorized:
+      description: Missing/invalid token or credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Forbidden:
+      description: Missing permission or role
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+    Conflict:
+      description: Duplicate code or email
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 200
+        status:
+          type: string
+          example: success
+        message:
+          type: string
+          example: Success
+    ErrorEnvelope:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 400
+        status:
+          type: string
+          example: error
+        message:
+          type: string
+        data:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+    Meta:
+      type: object
+      properties:
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        total_pages:
+          type: integer
+        total_results:
+          type: integer
+    Audit:
+      type: object
+      properties:
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        updated_by:
+          type: string
+
+    # ---- inputs
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          example: admin@niskaladaisy.com
+        password:
+          type: string
+          format: password
+    RefreshInput:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+    ChangePasswordInput:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password:
+          type: string
+          format: password
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+    CreateUserInput:
+      type: object
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          maxLength: 150
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+        is_active:
+          type: boolean
+        role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    UpdateUserInput:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+          maxLength: 150
+        email:
+          type: string
+          format: email
+          maxLength: 150
+        is_active:
+          type: boolean
+        role_ids:
+          type: array
+          description: Omit to keep the current roles
+          items:
+            type: string
+            format: uuid
+    ResetPasswordInput:
+      type: object
+      required: [new_password]
+      properties:
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 72
+    CreateRoleInput:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+          maxLength: 50
+          example: admin
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        permission_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        menu_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+    UpdateRoleInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        permission_ids:
+          type: array
+          description: Omit to keep the current permissions
+          items:
+            type: string
+            format: uuid
+        menu_ids:
+          type: array
+          description: Omit to keep the current menus
+          items:
+            type: string
+            format: uuid
+    MenuInput:
+      type: object
+      required: [code, name]
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        code:
+          type: string
+          maxLength: 50
+        name:
+          type: string
+          maxLength: 100
+        path:
+          type: string
+          maxLength: 255
+        icon:
+          type: string
+          maxLength: 100
+        sort_order:
+          type: integer
+        is_active:
+          type: boolean
+
+    # ---- outputs
+    TokenExpires:
+      type: object
+      properties:
+        token:
+          type: string
+        expires:
+          type: string
+          format: date-time
+    Tokens:
+      type: object
+      properties:
+        access:
+          $ref: '#/components/schemas/TokenExpires'
+        refresh:
+          $ref: '#/components/schemas/TokenExpires'
+    LoginResult:
+      type: object
+      properties:
+        tokens:
+          $ref: '#/components/schemas/Tokens'
+        user:
+          $ref: '#/components/schemas/User'
+    MeResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        roles:
+          type: array
+          items:
+            type: string
+        permissions:
+          type: array
+          items:
+            type: string
+        menus:
+          type: array
+          items:
+            $ref: '#/components/schemas/Menu'
+    User:
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            email:
+              type: string
+            is_active:
+              type: boolean
+            last_login_at:
+              type: string
+              format: date-time
+              nullable: true
+            roles:
+              type: array
+              items:
+                $ref: '#/components/schemas/Role'
+        - $ref: '#/components/schemas/Audit'
+    Role:
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            code:
+              type: string
+            name:
+              type: string
+            description:
+              type: string
+            is_system:
+              type: boolean
+            permissions:
+              type: array
+              items:
+                $ref: '#/components/schemas/Permission'
+            menus:
+              type: array
+              items:
+                $ref: '#/components/schemas/Menu'
+        - $ref: '#/components/schemas/Audit'
+    Permission:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+          example: user.read
+        name:
+          type: string
+        module:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Menu:
+      allOf:
+        - type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            parent_id:
+              type: string
+              format: uuid
+              nullable: true
+            code:
+              type: string
+            name:
+              type: string
+            path:
+              type: string
+            icon:
+              type: string
+            sort_order:
+              type: integer
+            is_active:
+              type: boolean
+            children:
+              type: array
+              items:
+                $ref: '#/components/schemas/Menu'
+        - $ref: '#/components/schemas/Audit'

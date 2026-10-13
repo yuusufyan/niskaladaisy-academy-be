@@ -12,6 +12,7 @@ import (
 	"github.com/yuusufyan/go-common/pkg/utils"
 	"github.com/yuusufyan/go-common/response"
 
+	"github.com/yuusufyan/niskaladaisy-academy-be/internal/apidocs"
 	"github.com/yuusufyan/niskaladaisy-academy-be/internal/config"
 	"github.com/yuusufyan/niskaladaisy-academy-be/internal/handler"
 	"github.com/yuusufyan/niskaladaisy-academy-be/internal/middleware"
@@ -81,16 +82,20 @@ func main() {
 	})
 	commonMiddleware.InstallCommonMiddleware(app, log)
 
-	// Health check is registered before InternalSecret so probes can reach it.
+	// Health check is registered before any auth middleware so probes can reach it.
 	utils.RegisterHealthCheck(app, db, rdb)
 
-	app.Use(commonMiddleware.InternalSecretFromEnv("dev-only-fallback-secret"))
+	if !cfg.IsProd() {
+		apidocs.Register(app)
+	}
+
+	auth := middleware.Auth(cfg.JWT.Secret, accessSvc)
 
 	api := app.Group("/api/v1")
-	api.Get("/ping", func(c *fiber.Ctx) error {
+	api.Get("/ping", auth, middleware.RequireSuperAdmin(), func(c *fiber.Ctx) error {
 		return response.Success(c, fiber.StatusOK, "pong", nil)
 	})
-	handler.RegisterUserManagement(api, h, middleware.Auth(cfg.JWT.Secret, accessSvc))
+	handler.RegisterUserManagement(api, h, auth)
 
 	app.Use(utils.NotFoundHandler)
 
