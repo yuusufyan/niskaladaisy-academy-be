@@ -24,6 +24,13 @@ const (
 	PermMenuCreate = "menu.create"
 	PermMenuUpdate = "menu.update"
 	PermMenuDelete = "menu.delete"
+
+	PermMembershipUpdate = "membership.update"
+
+	// Holding any video permission also unlocks every premium video, for content QA.
+	PermVideoCreate = "video.create"
+	PermVideoUpdate = "video.update"
+	PermVideoDelete = "video.delete"
 )
 
 type Permission struct {
