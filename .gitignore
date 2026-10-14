@@ -5,3 +5,4 @@ tmp/
 .DS_Store
 .env.*
 !.env.example
+docs/features/premium-membership/
