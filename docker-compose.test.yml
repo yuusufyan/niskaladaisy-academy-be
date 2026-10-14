@@ -1,0 +1,26 @@
+# Database khusus untuk menjalankan API test (test/api) secara lokal/CI.
+# Terpisah total dari database development: port berbeda (55432, bukan 5432) dan nama
+# database/kredensial sendiri. Jangan dipakai untuk apa pun selain suite test.
+#
+# Pemakaian:
+#   docker compose -f docker-compose.test.yml up -d
+#   go test ./test/api/...
+#   docker compose -f docker-compose.test.yml down -v
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: niskaladaisy-academy-be-postgres-test
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_pass_do_not_use_in_prod
+      POSTGRES_DB: niskaladaisy_academy_test
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d niskaladaisy_academy_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
