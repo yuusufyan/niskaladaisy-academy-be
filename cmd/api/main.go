@@ -54,6 +54,8 @@ func main() {
 	permRepo := repository.NewPermissionRepository(db)
 	menuRepo := repository.NewMenuRepository(db)
 	tokenRepo := repository.NewTokenRepository(rdb)
+	membershipRepo := repository.NewMembershipRepository(db)
+	videoRepo := repository.NewVideoRepository(db)
 
 	if err := seed.SuperAdmin(context.Background(), cfg.Seed, txManager, userRepo, roleRepo, log); err != nil {
 		log.Fatalf("Failed to seed superadmin: %v", err)
@@ -67,13 +69,16 @@ func main() {
 	userSvc := service.NewUserService(txManager, userRepo, roleRepo, tokenRepo, accessSvc)
 	roleSvc := service.NewRoleService(txManager, roleRepo, permRepo, menuRepo, accessSvc)
 	menuSvc := service.NewMenuService(menuRepo, accessSvc)
+	membershipSvc := service.NewMembershipService(membershipRepo, userSvc)
+	videoSvc := service.NewVideoService(videoRepo, membershipSvc, log)
 
 	validate := handler.NewValidator()
 	h := handler.Handlers{
-		Auth: handler.NewAuthHandler(authSvc, userSvc, menuSvc, validate),
-		User: handler.NewUserHandler(userSvc, validate),
-		Role: handler.NewRoleHandler(roleSvc, validate),
-		Menu: handler.NewMenuHandler(menuSvc, validate),
+		Auth:       handler.NewAuthHandler(authSvc, userSvc, menuSvc, validate),
+		User:       handler.NewUserHandler(userSvc, validate),
+		Role:       handler.NewRoleHandler(roleSvc, validate),
+		Menu:       handler.NewMenuHandler(menuSvc, validate),
+		Membership: handler.NewMembershipHandler(membershipSvc, validate),
 	}
 
 	app := fiber.New(fiber.Config{
@@ -96,6 +101,7 @@ func main() {
 		return response.Success(c, fiber.StatusOK, "pong", nil)
 	})
 	handler.RegisterUserManagement(api, h, auth)
+	handler.RegisterVideos(api, handler.NewVideoHandler(videoSvc, validate), auth)
 
 	app.Use(utils.NotFoundHandler)
 
