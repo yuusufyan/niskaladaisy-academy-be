@@ -3,7 +3,8 @@ info:
   title: Niskala Daisy Academy API
   version: 1.0.0
   description: |
-    User management API (auth, users, roles, permissions, menus).
+    User management API (auth, users, roles, permissions, menus), premium memberships and
+    the video catalog.
 
     **How to test:**
     1. Call `POST /auth/login`, copy `data.tokens.access.token`.
@@ -21,6 +22,8 @@ tags:
   - name: Roles
   - name: Permissions
   - name: Menus
+  - name: Memberships
+  - name: Videos
 
 paths:
   /health:
@@ -286,6 +289,178 @@ paths:
           $ref: '#/components/responses/Message'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ---------------------------------------------------------------- Memberships
+  /users/{id}/membership:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Memberships]
+      summary: Get a user's membership
+      description: 'Permission: `user.read`. A user whose status was never set is `free`.'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Memberships]
+      summary: Set a user's membership
+      description: 'Permission: `membership.update`. Setting `free` always clears `expires_at`.'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetMembershipInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /me/membership:
+    get:
+      tags: [Memberships]
+      summary: Own membership
+      description: The user is taken from the access token only.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/MembershipResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------- Videos
+  /videos:
+    get:
+      tags: [Videos]
+      summary: Video catalog
+      description: |
+        Any authenticated user. `video_url` of a premium video is only included (and `locked`
+        is false) for active premium members, superadmins and holders of `video.create`,
+        `video.update` or `video.delete`.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/VideoCatalogItem'
+                      meta:
+                        $ref: '#/components/schemas/Meta'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Videos]
+      summary: Create a video
+      description: 'Permission: `video.create`'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/VideoResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /videos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ID'
+    get:
+      tags: [Videos]
+      summary: Get a catalog video
+      description: Same locking rules as the catalog list.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Envelope'
+                  - properties:
+                      data:
+                        $ref: '#/components/schemas/VideoCatalogItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Videos]
+      summary: Update a video
+      description: 'Permission: `video.update`. Omit `is_premium` to keep the current value.'
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VideoInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/VideoResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Videos]
+      summary: Delete a video
+      description: 'Permission: `video.delete`'
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -569,6 +744,26 @@ components:
               - properties:
                   data:
                     $ref: '#/components/schemas/Menu'
+    MembershipResponse:
+      description: A membership
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    $ref: '#/components/schemas/Membership'
+    VideoResponse:
+      description: A video
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Envelope'
+              - properties:
+                  data:
+                    $ref: '#/components/schemas/Video'
     BadRequest:
       description: Invalid body or validation failed (`data` maps field to message)
       content:
@@ -813,6 +1008,38 @@ components:
           type: integer
         is_active:
           type: boolean
+    SetMembershipInput:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [free, premium]
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: RFC 3339, must be in the future; must be empty when `status` is `free`
+          example: '2026-12-31T23:59:59Z'
+    VideoInput:
+      type: object
+      required: [title, video_url]
+      properties:
+        title:
+          type: string
+          maxLength: 200
+        description:
+          type: string
+          maxLength: 2000
+        video_url:
+          type: string
+          format: uri
+          maxLength: 500
+          description: http or https URL
+          example: https://cdn.example.com/video/intro.mp4
+        is_premium:
+          type: boolean
+          description: Defaults to false on create; omit on update to keep the current value
 
     # ---- outputs
     TokenExpires:
@@ -946,3 +1173,61 @@ components:
               items:
                 $ref: '#/components/schemas/Menu'
         - $ref: '#/components/schemas/Audit'
+    Membership:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [free, premium]
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_active:
+          type: boolean
+          description: Computed at request time from status and expires_at
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null when the status was never set
+    Video:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        video_url:
+          type: string
+        is_premium:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    VideoCatalogItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        is_premium:
+          type: boolean
+        locked:
+          type: boolean
+        video_url:
+          type: string
+          description: Absent when `locked` is true
